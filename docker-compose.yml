@@ -1,0 +1,65 @@
+version: "3.9"
+
+networks:
+  forum-laravel:
+
+services:
+  php:
+    build:
+      context: .
+      dockerfile: php.dockerfile
+      args:
+        APP_PORT: ${APP_PORT}
+    container_name: forum_laravel_php
+    tty: true
+    ports:
+      - 8800:8800
+    env_file:
+      - .docker.env
+    volumes:
+      - ./:/var/www/html/laravel-forum
+    depends_on:
+      - postgres
+      - redis
+      - redis_testing
+    networks:
+      - forum-laravel
+
+  redis:
+    image: "redis:6.2.5-alpine"
+    container_name: forum_laravel_redis
+    command: redis-server /usr/local/etc/redis/redis.conf
+    tty: true
+    volumes:
+      - ./.redis/redis.conf:/usr/local/etc/redis/redis.conf
+    ports:
+      - 8801:6379
+    networks:
+      - forum-laravel
+
+  redis_testing:
+    image: "redis:6.2.5-alpine"
+    container_name: forum_laravel_redis_testing
+    command: redis-server /usr/local/etc/redis/redis.conf
+    tty: true
+    volumes:
+      - ./.redis/redis_testing.conf:/usr/local/etc/redis/redis.conf
+    ports:
+      - 8802:6379
+    networks:
+      - forum-laravel
+
+  postgres:
+    image: "postgres:13.4-alpine"
+    container_name: forum_laravel_postgres
+    tty: true
+    ports:
+      - 8803:5432
+    env_file:
+      - .docker.env
+    environment:
+      - POSTGRES_USER=${DB_USERNAME}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_DATABASE}
+    networks:
+      - forum-laravel
