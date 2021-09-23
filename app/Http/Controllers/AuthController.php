@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Constants\AuthErrorCodes;
 use Constants\RedisKeys;
 use Exception;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -57,7 +58,7 @@ class AuthController extends Controller
       $line = $e->getLine();
       Log::critical("failed to check if email/username exists", [
         "message" => $e->getMessage(),
-        "log" => AuthErrorCodes::EMAIL_USERNAME_EXISTS_CHECK_FAIL,
+        "code" => AuthErrorCodes::EMAIL_USERNAME_EXISTS_CHECK_FAIL,
         "line" => $line,
       ]);
 
@@ -68,30 +69,31 @@ class AuthController extends Controller
       );
     }
 
-    $userId = Uuid::uuid4();
+    $userId = $this->generateUserId();
+
+    $timestamp = time();
+    $user = $request->only(["email", "username"]);
+    $user["created_at"] = $timestamp;
+    $user["updated_at"] = $timestamp;
+    $user["password"] = Hash::make($request->get("password"));
 
     try {
-      Redis::pipeline(function ($pipeline) use ($request, $userId) {
+      Redis::pipeline(function ($pipeline) use ($userId, $timestamp, $user) {
         $timestamp = time();
 
-        $pipeline->hset(RedisKeys::USER_EMAIL_PRIMARY_IDX, $request->get("email"), $userId);
-        $pipeline->hset(RedisKeys::USER_USERNAME_PRIMARY_IDX, $request->get("username"), $userId);
+        $pipeline->hset(RedisKeys::USER_EMAIL_PRIMARY_IDX, $user["email"], $userId);
+        $pipeline->hset(RedisKeys::USER_USERNAME_PRIMARY_IDX, $user["username"], $userId);
 
         $pipeline->zadd(RedisKeys::USER_CREATED_IDX, $timestamp, $userId);
         $pipeline->zadd(RedisKeys::USER_UPDATED_IDX, $timestamp, $userId);
 
-        $data = $request->only(["email", "username"]);
-        $data["created_at"] = $timestamp;
-        $data["updated_at"] = $timestamp;
-        $data["password"] = Hash::make($request->get("password"));
-
-        $pipeline->hmset(str_replace("<id>", $userId, RedisKeys::USER), $data);
+        $pipeline->hmset(str_replace("<id>", $userId, RedisKeys::USER), $user);
       });
     } catch (Exception $e) {
       $line = $e->getLine();
       Log::critical("failed to create user", [
         "message" => $e->getMessage(),
-        "log" => AuthErrorCodes::USER_CREATE_FAILED,
+        "code" => AuthErrorCodes::USER_CREATE_FAILED,
         "line" => $line,
       ]);
 
@@ -102,6 +104,46 @@ class AuthController extends Controller
       );
     }
 
-    return sendSuccessResponse(null);
+    $token = $this->generateToken($userId);
+    if ($token instanceof JsonResponse) {
+      return $token;
+    }
+
+    $user["id"] = $userId;
+    $user["password"] = null;
+
+    return sendSuccessResponse([
+      "token" => $token,
+      "user" => $user
+    ]);
+  }
+
+  private function generateUserId(): string
+  {
+    return Uuid::uuid4()->toString();
+  }
+
+  private function generateToken(string $userId): JsonResponse | string
+  {
+    $token = Uuid::uuid4()->toString();
+
+    try {
+      $key = str_replace("<id>", $userId, RedisKeys::USER_TOKEN);
+      Redis::hset($key, "token", $token);
+      return $token;
+    } catch (Exception $e) {
+      $line = $e->getLine();
+      Log::critical("failed to issue auth token", [
+        "message" => $e->getMessage(),
+        "code" => AuthErrorCodes::TOKEN_CREATE_FAILED,
+        "line" => $line,
+      ]);
+
+      return sendErrorResponse(
+        500,
+        AuthErrorCodes::TOKEN_CREATE_FAILED,
+        null
+      );
+    }
   }
 }

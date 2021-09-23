@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use Constants\RedisKeys;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Testing\Fluent\AssertableJson;
+use Ramsey\Uuid\Uuid;
 use Tests\TestCase;
 use Tests\TestConstants;
 
@@ -157,13 +160,45 @@ class UserTest extends TestCase
 
   public function testCreatesUser()
   {
+    $email = "new@gmail.com";
+    $username = "newusername";
+    $password = "password";
+
     $response = $this->postJson("/api/register", [
-      "email" => "new@gmail.com",
-      "username" => "newusername",
-      "password" => "password",
-      "password_confirm" => "password"
+      "email" => $email,
+      "username" => $username,
+      "password" => $password,
+      "password_confirm" => $password
     ]);
 
     $response->assertStatus(200);
+
+    $responseContent = json_decode($response->getContent())->data;
+
+    $this->assertTrue(Uuid::isValid($responseContent->token));
+
+    $userIdFromEmail = Redis::hget(RedisKeys::USER_EMAIL_PRIMARY_IDX, $email);
+
+    $this->assertTrue(!!$userIdFromEmail);
+
+    $userIdFromUsername = Redis::hget(RedisKeys::USER_USERNAME_PRIMARY_IDX, $username);
+
+    $this->assertTrue(!!$userIdFromUsername);
+
+    $this->assertEquals($userIdFromEmail, $userIdFromUsername);
+
+    $userId = $userIdFromUsername;
+
+    $user = Redis::hgetall(str_replace("<id>", $userId, RedisKeys::USER));
+
+    $this->assertTrue($user["email"] === $email);
+    $this->assertTrue($user["username"] === $username);
+    $this->assertTrue(Hash::check($password, $user["password"]));
+    $this->assertTrue(strlen($user["created_at"]) > 0);
+    $this->assertTrue(strlen($user["updated_at"]) > 0);
+
+    $token = Redis::hgetall(str_replace("<id>", $userId, RedisKeys::USER_TOKEN));
+
+    $this->assertTrue(strlen($token["token"]) > 0);
   }
 }

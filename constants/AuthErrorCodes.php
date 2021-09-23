@@ -9,4 +9,5 @@ class AuthErrorCodes
   const EMAIL_EXISTS = 102;
   const USERNAME_EXISTS = 103;
   const USER_CREATE_FAILED = 104;
+  const TOKEN_CREATE_FAILED = 105;
 }

@@ -3,8 +3,16 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Redis;
 
 abstract class TestCase extends BaseTestCase
 {
-    use CreatesApplication;
+  use CreatesApplication;
+
+  public function setUp(): void
+  {
+    parent::setUp();
+
+    Redis::flushall();
+  }
 }

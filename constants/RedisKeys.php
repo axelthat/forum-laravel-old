@@ -9,4 +9,5 @@ class RedisKeys
   const USER_EMAIL_PRIMARY_IDX = "idx:primary:email:users";
   const USER_USERNAME_PRIMARY_IDX = "idx:primary:username:users";
   const USER = "users:<id>";
+  const USER_TOKEN = "token:users:<id>";
 }
