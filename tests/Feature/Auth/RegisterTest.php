@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature;
+namespace Tests\Feature\Auth;
 
 use Constants\RedisKeys;
 use Illuminate\Support\Facades\Hash;
@@ -10,14 +10,14 @@ use Ramsey\Uuid\Uuid;
 use Tests\TestCase;
 use Tests\TestConstants;
 
-class UserTest extends TestCase
+class RegisterTest extends TestCase
 {
   /**
    * A basic test example.
    *
    * @return void
    */
-  public function testThrowsErrorIfNoDataIsSupplied()
+  public function testThrowsErrorIfNoDataIsSent()
   {
     $messages = TestConstants::getValidationMessages();
 
@@ -31,7 +31,7 @@ class UserTest extends TestCase
     ]);
   }
 
-  public function testThrowsErrorWhenInvalidEmailIsSupplied()
+  public function testThrowsErrorWhenInvalidEmailIsSent()
   {
     $messages = TestConstants::getValidationMessages();
 
@@ -80,7 +80,7 @@ class UserTest extends TestCase
     ]);
   }
 
-  public function testThrowsErrorIfLongUsernameOrLongPasswordIsSupplied()
+  public function testThrowsErrorIfLongUsernameOrLongPasswordIsSent()
   {
     $messages = TestConstants::getValidationMessages();
 
@@ -101,7 +101,7 @@ class UserTest extends TestCase
     ]);
   }
 
-  public function testThrowsErrorIfShortUsernameOrLongPasswordIsSupplied()
+  public function testThrowsErrorIfShortUsernameOrLongPasswordIsSent()
   {
     $messages = TestConstants::getValidationMessages();
 

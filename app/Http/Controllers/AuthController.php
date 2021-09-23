@@ -12,12 +12,93 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use PhpParser\Node\Stmt\Echo_;
 use Ramsey\Uuid\Uuid;
 
 class AuthController extends Controller
 {
   public function login(Request $request)
   {
+    $validation = Validator::make($request->all(), [
+      "email" => "required|string",
+      "password" => "required|string",
+    ]);
+
+    if ($validation->fails()) {
+      return sendErrorResponse(
+        responseCode: 422,
+        message: (new ValidationException($validation))->errors()
+      );
+    }
+
+    $userId = null;
+
+    try {
+      [$emailExists, $usernameExists] = $this->checkIfEmailOrUsernameExists();
+
+      if (!$emailExists && !$usernameExists) {
+        return sendErrorResponse(
+          responseCode: 404,
+          message: [
+            "email" => "This email or username doesn't exist"
+          ]
+        );
+      }
+
+      $userId = $emailExists;
+    } catch (Exception $e) {
+      return sendErrorResponse(
+        responseCode: 500,
+        errorCode: AuthErrorCodes::LOGIN_EMAIL_USERNAME_EXISTS_CHECK_FAIL,
+        exception: $e,
+        errorSubject: "failed to check if email/username exists",
+      );
+    }
+
+    $key = str_replace("<id>", $userId, RedisKeys::USER);
+
+    try {
+      $password = Redis::hget($key, "password");
+      if (!Hash::check($request->get('password'), $password)) {
+        return sendErrorResponse(
+          responseCode: 422,
+          message: [
+            "password" => "Wrong password entered"
+          ]
+        );
+      }
+    } catch (Exception $e) {
+      return sendErrorResponse(
+        responseCode: 500,
+        errorCode: AuthErrorCodes::LOGIN_EMAIL_USERNAME_EXISTS_CHECK_FAIL,
+        exception: $e,
+        errorSubject: "failed to verify password",
+      );
+    }
+
+    try {
+      $user = Redis::hgetall($key);
+    } catch (Exception $e) {
+      return sendErrorResponse(
+        responseCode: 500,
+        errorCode: AuthErrorCodes::LOGIN_GET_USER_FAILED,
+        exception: $e,
+        errorSubject: "failed to get user",
+      );
+    }
+
+    $token = $this->generateToken($userId);
+    if ($token instanceof JsonResponse) {
+      return $token;
+    }
+
+    $user["id"] = $userId;
+    unset($user["password"]);
+
+    return sendSuccessResponse([
+      "token" => $token,
+      "user" => $user
+    ]);
   }
 
   public function register(Request $request)
@@ -31,41 +112,38 @@ class AuthController extends Controller
 
     if ($validation->fails()) {
       return sendErrorResponse(
-        422,
-        AuthErrorCodes::VALIDATION_FAILED,
-        (new ValidationException($validation))->errors()
+        responseCode: 422,
+        message: (new ValidationException($validation))->errors()
       );
     }
 
     try {
-      [$emailExists, $usernameExists] = Redis::pipeline(function ($pipeline) use ($request) {
-        $pipeline->hget(RedisKeys::USER_EMAIL_PRIMARY_IDX, $request->get("email"));
-        $pipeline->hget(RedisKeys::USER_USERNAME_PRIMARY_IDX, $request->get("username"));
-      });
+      [$emailExists, $usernameExists] = $this->checkIfEmailOrUsernameExists();
 
       if ($emailExists) {
-        return sendErrorResponse(409, AuthErrorCodes::EMAIL_EXISTS, [
-          "email" => "This email already exists"
-        ]);
+        return sendErrorResponse(
+          responseCode: 409,
+          message: [
+            "email" => "This email already exists"
+          ]
+        );
       }
 
       if ($usernameExists) {
-        return sendErrorResponse(409, AuthErrorCodes::USERNAME_EXISTS, [
-          "username" => "This username already exists"
-        ]);
+        return sendErrorResponse(
+          responseCode: 409,
+          message: [
+            "username" => "This username already exists"
+          ]
+        );
       }
     } catch (Exception $e) {
-      $line = $e->getLine();
-      Log::critical("failed to check if email/username exists", [
-        "message" => $e->getMessage(),
-        "code" => AuthErrorCodes::EMAIL_USERNAME_EXISTS_CHECK_FAIL,
-        "line" => $line,
-      ]);
-
       return sendErrorResponse(
-        500,
-        AuthErrorCodes::EMAIL_USERNAME_EXISTS_CHECK_FAIL,
-        null
+        responseCode: 500,
+        errorCode: AuthErrorCodes::REGISTER_EMAIL_USERNAME_EXISTS_CHECK_FAIL,
+        exception: $e,
+        errorSubject: "failed to check if email/username exists",
+        message: null
       );
     }
 
@@ -90,17 +168,11 @@ class AuthController extends Controller
         $pipeline->hmset(str_replace("<id>", $userId, RedisKeys::USER), $user);
       });
     } catch (Exception $e) {
-      $line = $e->getLine();
-      Log::critical("failed to create user", [
-        "message" => $e->getMessage(),
-        "code" => AuthErrorCodes::USER_CREATE_FAILED,
-        "line" => $line,
-      ]);
-
       return sendErrorResponse(
-        500,
-        AuthErrorCodes::USER_CREATE_FAILED,
-        null
+        responseCode: 500,
+        errorCode: AuthErrorCodes::REGISTER_USER_CREATE_FAILED,
+        exception: $e,
+        errorSubject: "failed to create user",
       );
     }
 
@@ -118,6 +190,16 @@ class AuthController extends Controller
     ]);
   }
 
+  private function checkIfEmailOrUsernameExists()
+  {
+    $request = request();
+
+    return Redis::pipeline(function ($pipeline) use ($request) {
+      $pipeline->hget(RedisKeys::USER_EMAIL_PRIMARY_IDX, $request->get("email"));
+      $pipeline->hget(RedisKeys::USER_USERNAME_PRIMARY_IDX, $request->get("username"));
+    });
+  }
+
   private function generateUserId(): string
   {
     return Uuid::uuid4()->toString();
@@ -132,17 +214,11 @@ class AuthController extends Controller
       Redis::hset($key, "token", $token);
       return $token;
     } catch (Exception $e) {
-      $line = $e->getLine();
-      Log::critical("failed to issue auth token", [
-        "message" => $e->getMessage(),
-        "code" => AuthErrorCodes::TOKEN_CREATE_FAILED,
-        "line" => $line,
-      ]);
-
       return sendErrorResponse(
-        500,
-        AuthErrorCodes::TOKEN_CREATE_FAILED,
-        null
+        responseCode: 500,
+        errorCode: AuthErrorCodes::REGISTER_TOKEN_CREATE_FAILED,
+        exception: $e,
+        errorSubject: "failed to issue auth token",
       );
     }
   }
