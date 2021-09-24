@@ -5,18 +5,24 @@ namespace App\Http\Controllers;
 use Constants\AuthErrorCodes;
 use Constants\RedisKeys;
 use Exception;
+use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
-use PhpParser\Node\Stmt\Echo_;
 use Ramsey\Uuid\Uuid;
 
 class AuthController extends Controller
 {
+  /**
+   * 
+   * Authenticates the user
+   * 
+   * @param Request $request 
+   * @return JsonResponse 
+   */
   public function login(Request $request)
   {
     $validation = Validator::make($request->all(), [
@@ -101,6 +107,12 @@ class AuthController extends Controller
     ]);
   }
 
+  /**
+   * Registers and authenticates the user.
+   * 
+   * @param Request $request 
+   * @return JsonResponse 
+   */
   public function register(Request $request)
   {
     $validation = Validator::make($request->all(), [
@@ -190,6 +202,13 @@ class AuthController extends Controller
     ]);
   }
 
+  /**
+   * Checks if email or username exists at once
+   * using redis pipeline.
+   * 
+   * @return mixed 
+   * @throws BindingResolutionException 
+   */
   private function checkIfEmailOrUsernameExists()
   {
     $request = request();
@@ -200,11 +219,25 @@ class AuthController extends Controller
     });
   }
 
+  /**
+   * Generates a user id for the newly
+   * created user.
+   * 
+   * @return string 
+   */
   private function generateUserId(): string
   {
     return Uuid::uuid4()->toString();
   }
 
+  /**
+   * Generates a uuid based authentication
+   * token.
+   * 
+   * @param string $userId 
+   * @return JsonResponse|string 
+   * @throws BindingResolutionException 
+   */
   private function generateToken(string $userId): JsonResponse | string
   {
     $token = Uuid::uuid4()->toString();

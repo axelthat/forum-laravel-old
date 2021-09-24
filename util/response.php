@@ -1,6 +1,7 @@
 <?php
 
 use Constants\AuthErrorCodes;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 
 const HTTP_MESSAGES = [
@@ -9,7 +10,7 @@ const HTTP_MESSAGES = [
   500 => "Internal server error",
 ];
 
-function sendSuccessResponse(string|array|null $message)
+function sendSuccessResponse(string|array|null $message): JsonResponse
 {
   return response()->json([
     "data" => $message ?? HTTP_MESSAGES[200]
@@ -22,7 +23,7 @@ function sendErrorResponse(
   Exception|null $exception = null,
   string|null $errorSubject = null,
   string|array|null $message = null
-) {
+): JsonResponse {
   if (!is_null($exception)) {
     $line = $exception->getLine();
     Log::critical($errorSubject, [
